@@ -1,0 +1,45 @@
+{
+  "backups": [
+    {
+      "id": "bkp0",
+      "path": "/backups/db0.tar.gz",
+      "timestamp": "2025-02-01T01:00:00Z",
+      "checksum": "abc0xyz"
+    },
+    {
+      "id": "bkp1",
+      "path": "/backups/db1.tar.gz",
+      "timestamp": "2025-02-02T01:00:00Z",
+      "checksum": "abc1xyz"
+    },
+    {
+      "id": "bkp2",
+      "path": "/backups/db2.tar.gz",
+      "timestamp": "2025-02-03T01:00:00Z",
+      "checksum": "abc2xyz"
+    },
+    {
+      "id": "bkp3",
+      "path": "/backups/db3.tar.gz",
+      "timestamp": "2025-02-04T01:00:00Z",
+      "checksum": "abc3xyz"
+    },
+    {
+      "id": "bkp4",
+      "path": "/backups/db4.tar.gz",
+      "timestamp": "2025-02-05T01:00:00Z",
+      "checksum": "abc4xyz"
+    }
+  ]
+}
+
+
+# Database Restore Playbook
+
+1. Stop application services
+2. Verify backup checksum
+3. Extract backup archive
+4. Restore database files
+5. Start application services
+6. Validate connectivity and data integrity
+
