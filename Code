@@ -1,3 +1,4 @@
+loader.py
 from pathlib import Path
 import json
 import yaml
@@ -17,7 +18,7 @@ def load_playbook_md(path: Path):
 
 
 
-
+sampler.py
 import random
 from datetime import datetime, timezone
 from typing import List, Dict
@@ -35,7 +36,7 @@ def sample_backups(catalog: Dict, count: int = 2, strategy: str = "random") -> L
     return backups[:count]
 
 
-
+checksum.py
 import hashlib
 from pathlib import Path
 
@@ -59,7 +60,7 @@ def compare_checksums(expected: str, actual: str) -> bool:
     return expected == actual
 
 
-
+dryrun.py
 import time
 from typing import Dict, List
 
@@ -116,7 +117,7 @@ class DryRunSimulator:
 
 
 
-
+analyser.py
 from typing import List, Dict
 
 def analyze_results(checksum_results: List[Dict], dryrun_results: List[Dict], targets: Dict) -> Dict:
@@ -168,7 +169,7 @@ def analyze_results(checksum_results: List[Dict], dryrun_results: List[Dict], ta
 
 
 
-
+report.py
 import json
 from pathlib import Path
 from datetime import datetime
@@ -223,7 +224,7 @@ def generate_report(run_id: str, sampled: list, checksum_results: list, dryrun_r
 
 
 
-
+agent.py
 import uuid
 from pathlib import Path
 from datetime import datetime
