@@ -1,0 +1,286 @@
+from pathlib import Path
+import json
+import yaml
+
+def load_json(path: Path):
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def load_yaml(path: Path):
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+def load_playbook_md(path: Path):
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+
+
+
+import random
+from datetime import datetime, timezone
+from typing import List, Dict
+
+def sample_backups(catalog: Dict, count: int = 2, strategy: str = "random") -> List[Dict]:
+    backups = catalog.get("backups", [])
+    if not backups:
+        return []
+    if strategy == "random":
+        count = min(count, len(backups))
+        return random.sample(backups, count)
+    if strategy == "most_recent":
+        sorted_b = sorted(backups, key=lambda b: b.get("timestamp", ""), reverse=True)
+        return sorted_b[:count]
+    return backups[:count]
+
+
+
+import hashlib
+from pathlib import Path
+
+# This is a placeholder to compute actual checksum for a file.
+# In your lab, replace the compute_checksum to read the backup file content or metadata.
+
+def compute_checksum(path: str) -> str:
+    """
+    Fake checksum: if file exists return sha256 of path string,
+    else return 'MISSING'.
+    Replace with real file hashing when you have access to backup files.
+    """
+    p = Path(path)
+    if not p.exists():
+        return "MISSING"
+    # If you want to hash real file: use p.read_bytes()
+    h = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:8]
+    return h
+
+def compare_checksums(expected: str, actual: str) -> bool:
+    return expected == actual
+
+
+
+import time
+from typing import Dict, List
+
+class DryRunSimulator:
+    """
+    Simulates a dry-run restore using the playbook steps.
+    Non-destructive. Measures approximate time per step and returns
+    simulated success/failure.
+    """
+
+    def __init__(self, step_timeout_seconds: int = 10):
+        self.step_timeout = step_timeout_seconds
+
+    def run_playbook(self, backup: Dict, playbook_text: str) -> Dict:
+        """
+        Simulate executing each numbered step in the playbook.
+        Returns a dict with per-step status, total_time_sec, outcome boolean.
+        """
+        lines = [l.strip() for l in playbook_text.splitlines() if l.strip()]
+        # Basic parse: take lines that start with a digit + '.'
+        steps = []
+        for l in lines:
+            if l and (l[0].isdigit() or l.startswith("-")):
+                steps.append(l)
+            elif l.startswith("#"):
+                continue
+            else:
+                # include free-text lines as steps if playbook is simple
+                steps.append(l)
+        per_step = []
+        total_time = 0.0
+        for idx, s in enumerate(steps, start=1):
+            # simulate time cost
+            t = min(2 + idx*0.5, self.step_timeout)
+            time.sleep(0.01)  # keep runs fast; real agent would actually run/wait
+            # simple heuristics for failure:
+            # if step mentions 'Verify' and backup checksum is 'MISSING' -> fail
+            status = "success"
+            if "verify" in s.lower() or "checksum" in s.lower():
+                # if checksum field appears incorrect, mark maybe failed - actual check done elsewhere
+                if backup.get("checksum", "").upper() == "MISSING":
+                    status = "failed"
+            per_step.append({"step": s, "status": status, "time_sec": t})
+            total_time += t
+        outcome = all(p["status"] == "success" for p in per_step)
+        return {"backup_id": backup.get("id"), "steps": per_step, "total_time_sec": total_time, "outcome": outcome}
+
+
+
+
+
+
+
+
+
+
+
+from typing import List, Dict
+
+def analyze_results(checksum_results: List[Dict], dryrun_results: List[Dict], targets: Dict) -> Dict:
+    """
+    Combine checksum and dry-run outputs to produce a gap analysis and metrics.
+    """
+    total = len(dryrun_results)
+    success_count = sum(1 for r in dryrun_results if r.get("outcome"))
+    checksum_ok = sum(1 for c in checksum_results if c.get("valid"))
+    avg_dryrun_time = 0.0
+    if total:
+        avg_dryrun_time = sum(r.get("total_time_sec", 0) for r in dryrun_results) / total
+
+    gaps = []
+    for c, d in zip(checksum_results, dryrun_results):
+        if not c.get("valid"):
+            gaps.append({"backup_id": c["backup_id"], "issue": "checksum_mismatch_or_missing"})
+        if not d.get("outcome"):
+            gaps.append({"backup_id": d["backup_id"], "issue": "dryrun_failed_steps"})
+    # RTO check: total_time <= allowed rto (minutes -> secs)
+    rto_minutes = None
+    if isinstance(targets, dict):
+        t = (targets.get("targets") or [targets]).__class__  # workaround; we'll pull below
+    # assume first target
+    try:
+        rto_minutes = targets["targets"][0]["rto"]
+    except Exception:
+        rto_minutes = None
+
+    rto_violations = []
+    if rto_minutes:
+        for d in dryrun_results:
+            if d.get("total_time_sec", 0) > rto_minutes * 60:
+                rto_violations.append({"backup_id": d["backup_id"], "time_sec": d["total_time_sec"], "rto_sec": rto_minutes * 60})
+
+    metrics = {
+        "total_backups_sampled": total,
+        "dryrun_success_count": success_count,
+        "checksum_valid_count": checksum_ok,
+        "avg_dryrun_time_sec": avg_dryrun_time,
+        "rto_violations": rto_violations,
+        "gaps_found": gaps
+    }
+    return metrics
+
+
+
+
+
+
+
+
+import json
+from pathlib import Path
+from datetime import datetime
+import csv
+
+LOGS_DIR = Path("logs")
+EVIDENCE_DIR = LOGS_DIR / "evidence"
+CSV_FILE = LOGS_DIR / "barva_runs.csv"
+
+LOGS_DIR.mkdir(exist_ok=True)
+EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+
+def save_evidence(evidence: dict):
+    ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    path = EVIDENCE_DIR / f"evidence_{evidence.get('run_id', ts)}.json"
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(evidence, f, indent=2)
+    return path
+
+def append_telemetry_row(row: dict):
+    header = ["run_id", "timestamp", "total_sampled", "dryrun_success", "checksum_valid", "avg_time_sec"]
+    new_file = not CSV_FILE.exists()
+    with open(CSV_FILE, "a", newline="", encoding="utf-8") as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=header)
+        if new_file:
+            writer.writeheader()
+        writer.writerow({k: row.get(k) for k in header})
+
+def generate_report(run_id: str, sampled: list, checksum_results: list, dryrun_results: list, metrics: dict) -> dict:
+    report = {
+        "run_id": run_id,
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "sampled_backups": sampled,
+        "checksum_results": checksum_results,
+        "dryrun_results": dryrun_results,
+        "metrics": metrics
+    }
+    # Save evidence and telemetry
+    ev_path = save_evidence({"run_id": run_id, "report": report})
+    # append telemetry row
+    append_telemetry_row({
+        "run_id": run_id,
+        "timestamp": report["timestamp"],
+        "total_sampled": metrics.get("total_backups_sampled"),
+        "dryrun_success": metrics.get("dryrun_success_count"),
+        "checksum_valid": metrics.get("checksum_valid_count"),
+        "avg_time_sec": metrics.get("avg_dryrun_time_sec")
+    })
+    return {"report": report, "evidence_path": str(ev_path)}
+
+
+
+
+
+
+import uuid
+from pathlib import Path
+from datetime import datetime
+
+from src.loader import load_json, load_yaml, load_playbook_md
+from src.sampler import sample_backups
+from src.checksum import compute_checksum, compare_checksums
+from src.dryrun import DryRunSimulator
+from src.analyzer import analyze_results
+from src.report import generate_report
+
+DATA_DIR = Path("data")
+CATALOG_PATH = DATA_DIR / "backup_catalog.json"
+PLAYBOOKS_DIR = DATA_DIR / "restore_playbooks"
+TARGETS_PATH = DATA_DIR / "targets.yml"
+
+def run_barva(sample_count: int = 2, strategy: str = "random"):
+    run_id = uuid.uuid4().hex[:8]
+    print(f"[{datetime.utcnow().isoformat()}] BARVA run id: {run_id}")
+
+    catalog = load_json(CATALOG_PATH)
+    targets = load_yaml(TARGETS_PATH) or {}
+    # pick a single playbook for this demo (db_restore.md)
+    playbook_path = PLAYBOOKS_DIR / "db_restore.md"
+    playbook_text = load_playbook_md(playbook_path)
+
+    sampled = sample_backups(catalog, count=sample_count, strategy=strategy)
+    print(f"Sampled backups: {[b['id'] for b in sampled]}")
+
+    # Checksum validation
+    checksum_results = []
+    for b in sampled:
+        expected = b.get("checksum")
+        actual = compute_checksum(b.get("path"))
+        valid = compare_checksums(expected, actual)
+        checksum_results.append({"backup_id": b.get("id"), "expected": expected, "actual": actual, "valid": valid})
+        print(f"Checksum {b.get('id')}: expected={expected} actual={actual} valid={valid}")
+
+    # Dry-run simulation
+    sim = DryRunSimulator()
+    dryrun_results = []
+    for b in sampled:
+        res = sim.run_playbook(b, playbook_text)
+        dryrun_results.append(res)
+        print(f"Dry-run {b.get('id')}: outcome={res['outcome']} time={res['total_time_sec']:.1f}s")
+
+    # Analysis
+    metrics = analyze_results(checksum_results, dryrun_results, targets)
+    print("Analysis metrics:", metrics)
+
+    # Report
+    report_bundle = generate_report(run_id, sampled, checksum_results, dryrun_results, metrics)
+    print("Report evidence saved:", report_bundle["evidence_path"])
+    return report_bundle
+
+if __name__ == "__main__":
+    run_barva(sample_count=3, strategy="random")
+
+
+
