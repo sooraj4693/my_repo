@@ -1,3 +1,4 @@
+backup_catalog.json
 {
   "backups": [
     {
@@ -33,7 +34,7 @@
   ]
 }
 
-
+restart.md
 # Database Restore Playbook
 
 1. Stop application services
