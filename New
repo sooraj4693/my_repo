@@ -1,0 +1,18 @@
+barva/
+│── data/
+│    ├── backup_catalog.json
+│    ├── targets.yml
+│    └── restore_playbooks/
+│── logs/
+│    ├── barva_runs.csv
+│    └── evidence/
+│── memory/
+│    └── chromadb/
+│── src/
+     ├── loader.py
+     ├── sampler.py
+     ├── checksum.py
+     ├── dryrun.py
+     ├── analyzer.py
+     ├── report.py
+     ├── agent.py
